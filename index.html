@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Presensi Karyawan Atrium Mulia</title>
+  <style>
+    :root{--accent:#0ea5a4;--muted:#6b7280}
+    *{box-sizing:border-box}
+    body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial; margin:0; background:#f8fafc; color:#0f172a}
+    .container{max-width:720px;margin:24px auto;padding:20px}
+    .card{background:white;border-radius:14px;box-shadow:0 6px 18px rgba(15,23,42,0.06);padding:18px}
+    h1{font-size:20px;margin:0 0 8px}
+    p.lead{color:var(--muted);margin:0 0 12px}
+    .center{display:flex;align-items:center;justify-content:center}
+    button{background:var(--accent);color:white;border:0;padding:10px 14px;border-radius:10px;font-weight:600}
+    button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(14,165,164,0.12)}
+    .muted{color:var(--muted);font-size:13px}
+    .notice{padding:10px;border-radius:10px;margin-bottom:12px}
+    .notice.warn{background:#fff7ed;color:#92400e}
+    .notice.err{background:#fff1f2;color:#9f1239}
+    .row{display:flex;gap:10px}
+    .col{flex:1}
+    label{display:block;font-size:13px;margin-bottom:6px}
+    input[type=text], select{width:100%;padding:10px;border-radius:10px;border:1px solid #e6eef2}
+    footer{margin-top:14px;font-size:12px;color:var(--muted)}
+    @media(max-width:420px){.container{margin:12px;padding:14px}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+          <img src="https://uccareer.id/assets/upload/company/thumbs/thumb300px-20201106-091601-fd531.png" alt="Gambar logo Mulia berbentuk outline huruf M kapital" style="width:128px;height:80px;">
+      <h1>Presensi Karyawan Atrium Mulia</h1>
+      <p class="lead">Kami akan memverifikasi lokasi Anda sebelum mengizinkan proses presensi. Mohon memastikan perangkat Anda mengizinkan akses lokasi GPS.</p>
+
+      <div id="status" class="muted">Memeriksa kapabilitas perangkat...</div>
+
+      <div id="controls" style="margin-top:12px">
+        <div id="before-allowed">
+          <button id="btn-check">Verifikasi lokasi saya</button>
+        </div>
+      </div>
+
+      <div id="form-wrap" style="display:none;margin-top:14px">
+        <div class="notice warn">Lokasi terverifikasi: Anda berada di dalam area kantor. Isi formulir berikut.</div>
+        <form id="att-form">
+          <label for="name">Nama</label>
+          <input id="name" name="name" type="text" required autocomplete="name">
+
+          <div style="height:10px"></div>
+
+          <label for="staffid">ID</label>
+          <input id="staffid" name="id" type="text" required>
+
+          <div style="height:10px"></div>
+
+          <div class="row">
+            <div class="col">
+              <label for="dept">Departemen</label>
+              <select id="dept" name="department" required>
+                <option value="HR">Human Resource</option>
+                <option value="Security">Security</option>
+                <option value="Engineering">Engineering</option>
+                <option value="Housekeeping">Housekeeping</option>
+              </select>
+            </div>
+            <div class="col">
+              <label for="atype">IN / OUT</label>
+              <select id="atype" name="attendanceType" required>
+                <option value="Check In">Check In</option>
+                <option value="Check Out">Check Out</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="height:14px"></div>
+
+          <div class="center">
+            <button type="submit">Kirim</button>
+            <div style="width:10px"></div>
+            <button type="button" id="btn-cancel" class="ghost">Batal</button>
+          </div>
+        </form>
+      </div>
+
+      <div id="result" style="margin-top:12px"></div>
+
+      <footer>
+        <div id="debug" class="muted"></div>
+      </footer>
+    </div>
+  </div>
+
+<script>
+// CONFIG: office center & radius (meters) and GAS endpoint
+const OFFICE = { lat: -6.2077527, lon: 106.8286578 };
+const RADIUS_METERS = 100; // 100 m
+let GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxEMezAKJJKRY3FQUvzeLoop5IQMHMCHOWGXP6289eORIBocjK5_LvFhuX3bK-yD33K/exec';
+
+const statusEl = document.getElementById('status');
+const controlsEl = document.getElementById('controls');
+const formWrap = document.getElementById('form-wrap');
+const resultEl = document.getElementById('result');
+const debugEl = document.getElementById('debug');
+
+function setStatus(t){ statusEl.textContent = t; }
+function setDebug(t){ debugEl.textContent = t; }
+
+function toRad(v){ return v * Math.PI / 180; }
+// Haversine distance in meters
+function distanceMeters(lat1, lon1, lat2, lon2){
+  const R = 6371000; // m
+  const dLat = toRad(lat2-lat1);
+  const dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)*Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+async function getPublicIP(){
+  try{
+    const r = await fetch('https://api.ipify.org?format=json');
+    const j = await r.json();
+    return j.ip;
+  }catch(e){
+    console.warn('Gagal mendapatkan alamat IP', e);
+    return 'unknown';
+  }
+}
+
+async function verifyLocation(){
+  setStatus('Meminta lokasi perangkat...');
+  if(!navigator.geolocation){ setStatus('Perangkat ini tidak mendukung geolokasi.'); return false; }
+
+  return new Promise((resolve)=>{
+    const opts = { enableHighAccuracy:true, maximumAge:0, timeout:15000 };
+    navigator.geolocation.getCurrentPosition(async (pos)=>{
+      const lat = pos.coords.latitude, lon = pos.coords.longitude;
+      const d = distanceMeters(OFFICE.lat, OFFICE.lon, lat, lon);
+      setDebug(`Lat:${lat.toFixed(6)} Lon:${lon.toFixed(6)} — distance ${Math.round(d)} m`);
+      if(d <= RADIUS_METERS){ setStatus('Lokasi diizinkan — berada di area kantor.'); resolve(true); }
+      else{ setStatus('Anda terdeteksi tidak berada di area kantor.'); resolve(false); }
+    }, (err)=>{
+      console.warn(err);
+      if(err.code === 1) setStatus('Izin lokasi ditolak oleh user.');
+      else setStatus('Gagal mendapatkan lokasi: ' + (err.message || 'unknown'));
+      resolve(false);
+    }, opts);
+  });
+}
+
+// Wire up button
+document.getElementById('btn-check').addEventListener('click', async ()=>{
+  setResult('');
+  const ok = await verifyLocation();
+  if(ok){
+    formWrap.style.display = 'block';
+    document.getElementById('before-allowed').style.display = 'none';
+  } else {
+    formWrap.style.display = 'none';
+    document.getElementById('before-allowed').style.display = 'block';
+  }
+});
+
+function setResult(html){ resultEl.innerHTML = html; }
+
+// Cancel
+document.getElementById('btn-cancel').addEventListener('click', ()=>{
+  formWrap.style.display = 'none';
+  document.getElementById('before-allowed').style.display = 'block';
+  setStatus('Location check reset.');
+});
+
+// Handle form submit
+document.getElementById('att-form').addEventListener('submit', async (ev)=>{
+  ev.preventDefault();
+  setResult('Mengirim...');
+  setStatus('Menyiapkan presensi...');
+  const ip = await getPublicIP();
+  // gather form
+  const name = document.getElementById('name').value.trim();
+  const id = document.getElementById('staffid').value.trim();
+  const department = document.getElementById('dept').value;
+  const attendanceType = document.getElementById('atype').value;
+
+  const payload = { ip, name, id, department, attendanceType };
+
+  try{
+    // Use GET to avoid CORS preflight
+    const query = new URLSearchParams(payload).toString();
+    const r = await fetch(GAS_WEBAPP_URL + '?' + query);
+    const j = await r.json();
+    if(r.ok && j.result === 'success'){
+      setResult('<div class="notice">Presensi sudah dicatat. Timestamp: ' + j.timestamp + '</div>');
+      setStatus('Submitted.');
+      document.getElementById('att-form').reset();
+    }else{
+      setResult('<div class="notice err">Gagal mengirimkan data. ' + (j.error || 'Unknown error') + '</div>');
+      setStatus('Submission failed.');
+    }
+  }catch(err){
+    console.error(err);
+    setResult('<div class="notice err">Jaringan atau server galat saat mengirim.</div>');
+    setStatus('Submission error.');
+  }
+});
+
+// Small helper: early message
+setStatus('Klik "Verifikasi lokasi saya" untuk memulai.');
+
+</script>
+</body>
+</html>
