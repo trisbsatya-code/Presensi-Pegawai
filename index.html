@@ -105,7 +105,7 @@
 // CONFIG
 const OFFICE = { lat: -6.2077527, lon: 106.8286578 };
 const RADIUS_METERS = 10000; // SEMENTARA 10000 UNTUK TESTING
-let GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzdfX_M7wEhfWHu5wy7lTEs5HFUlvM9-Lgl09BhMl_Br6L_pYTLOGbcpfTokV-TyFsR/exec';
+let GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyuzAmSCzmFNePBLSTqeD06KY26z0xPhYXwNFTjqM7HG4z8J4QHBaNuF2tDxNfLfkr8/exec';
 
 // GLOBAL VARIABLES
 let videoStream = null;
@@ -281,7 +281,7 @@ document.getElementById('att-form').addEventListener('submit', async (ev)=>{
   setStatus('Menyiapkan foto...');
   const photoBase64 = capturePhoto(); 
   
-  // Menggunakan URLSearchParams agar menjadi Simple Request (Bebas CORS Preflight)
+  // Menggunakan URLSearchParams agar data terkirim sebagai parameter yang dibaca e.parameter
   const payload = new URLSearchParams();
   payload.append('name', document.getElementById('name').value.trim());
   payload.append('id', document.getElementById('staffid').value.trim());
@@ -290,31 +290,28 @@ document.getElementById('att-form').addEventListener('submit', async (ev)=>{
   payload.append('photo', photoBase64);
 
   try{
-    setStatus('Mengirim ke server database... (mohon tunggu)');
+    setStatus('Mengirim ke server database...');
     
-    // Fetch tanpa header Content-Type (akan diatur otomatis oleh browser sebagai form-urlencoded)
     const r = await fetch(GAS_WEBAPP_URL, {
       method: 'POST',
-      body: payload
+      body: payload // Mengirim sebagai form data, bukan JSON
     });
     
     const j = await r.json();
     if(r.ok && j.result === 'success'){
-      setResult('<div class="notice">Presensi & Foto tercatat. Waktu: ' + j.timestamp + '</div>');
-      setStatus('Berhasil terkirim.');
+      setResult('<div class="notice">Presensi & Foto tercatat.</div>');
+      setStatus('Berhasil.');
       document.getElementById('att-form').reset();
-      
       stopCamera();
       formWrap.style.display = 'none';
       document.getElementById('before-allowed').style.display = 'block';
-    }else{
-      setResult('<div class="notice err">Gagal mengirim. Server merespon: ' + (j.error || '') + '</div>');
-      setStatus('Gagal terkirim.');
+    } else {
+      setResult('<div class="notice err">Gagal: ' + (j.error || 'Unknown') + '</div>');
+      setStatus('Gagal.');
     }
   }catch(err){
-    setResult('<div class="notice err">Terjadi kendala CORS/Jaringan. Pastikan URL Web App sudah benar.</div>');
-    setStatus('Error pengiriman.');
-    console.error(err);
+    setResult('<div class="notice err">Error jaringan: ' + err.message + '</div>');
+    setStatus('Error.');
   }
   btnSubmit.disabled = false;
 });
