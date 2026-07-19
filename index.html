@@ -185,12 +185,24 @@ function capturePhoto() {
   const canvas = document.getElementById('canvas');
   if (!videoEl.videoWidth) return '';
   
-  canvas.width = videoEl.videoWidth;
-  canvas.height = videoEl.videoHeight;
+  // --- MULAI PERUBAHAN: KOMPRESI UKURAN FOTO ---
+  const MAX_WIDTH = 640; // Batas lebar maksimal foto agar ringan
+  let width = videoEl.videoWidth;
+  let height = videoEl.videoHeight;
+  
+  // Perkecil ukuran secara proporsional jika kamera HP terlalu besar (HD)
+  if (width > MAX_WIDTH) {
+    height = Math.round(height * (MAX_WIDTH / width));
+    width = MAX_WIDTH;
+  }
+
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext('2d');
   
-  // 1. Gambar tangkapan video asli ke kanvas
+  // 1. Gambar tangkapan video asli ke kanvas yang ukurannya sudah diperkecil
   ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+  // --- AKHIR PERUBAHAN: KOMPRESI UKURAN FOTO ---
   
   // 2. Siapkan informasi untuk watermark (Format: YYYY-MM-DD HH:MM WIB)
   const now = new Date();
@@ -204,8 +216,8 @@ function capturePhoto() {
   const namaPegawai = document.getElementById('name').value.trim() || 'Belum diisi';
   const attendanceType = document.getElementById('atype').value;
   
-  // 3. Atur gaya teks
-  ctx.font = '16px Arial'; 
+  // 3. Atur gaya teks (Ukuran font disesuaikan jadi 14px agar proporsional)
+  ctx.font = '14px Arial'; 
   ctx.fillStyle = 'white';
   ctx.strokeStyle = 'black';
   ctx.lineWidth = 3;
@@ -218,18 +230,19 @@ function capturePhoto() {
   
   const lines = [line1, line2, line3, line4];
   
-  // 5. Posisikan teks
+  // 5. Posisikan teks dari bawah
   const paddingX = 15;
-  let paddingY = canvas.height - 85; 
+  let paddingY = canvas.height - 80; 
   
   // Gambar setiap baris ke atas foto
   lines.forEach(line => {
     ctx.strokeText(line, paddingX, paddingY);
     ctx.fillText(line, paddingX, paddingY);
-    paddingY += 22; 
+    paddingY += 20; 
   });
   
-  return canvas.toDataURL('image/jpeg', 0.7); 
+  // Turunkan kualitas JPEG menjadi 60% (0.6) agar ukurannya lebih kecil lagi
+  return canvas.toDataURL('image/jpeg', 0.6); 
 }
 
 // Tombol Verifikasi
