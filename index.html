@@ -104,11 +104,15 @@
 <script>
 // CONFIG
 const OFFICE = { lat: -6.2077527, lon: 106.8286578 };
-const RADIUS_METERS = 10000;
-// PASTIKAN GAS_WEBAPP_URL INI ADALAH URL DEPLOYMENT BARU JIKA BERUBAH
-let GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyvlxSTfyjyhdD1-krk-yvdUK0SiF-NWlwsT1TI90ks1o9tUqxO-rVVRrbMqyRFNRTv/exec';
+const RADIUS_METERS = 10000; // SEMENTARA 10000 UNTUK TESTING
+let GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwXi1PLm342sEUfDfylpvdkKFieMIpKFDjrwsvalOad755s_0Zbo3uwTLaR7b6VE6hj/exec';
 
+// GLOBAL VARIABLES
 let videoStream = null;
+let currentLat = 0;
+let currentLon = 0;
+let currentDistance = 0;
+
 const statusEl = document.getElementById('status');
 const formWrap = document.getElementById('form-wrap');
 const resultEl = document.getElementById('result');
@@ -128,14 +132,6 @@ function distanceMeters(lat1, lon1, lat2, lon2){
   return R * c;
 }
 
-async function getPublicIP(){
-  try{
-    const r = await fetch('https://api.ipify.org?format=json');
-    const j = await r.json();
-    return j.ip;
-  }catch(e){ return 'unknown'; }
-}
-
 async function verifyLocation(){
   setStatus('Meminta lokasi perangkat...');
   if(!navigator.geolocation){ setStatus('Perangkat tidak mendukung geolokasi.'); return false; }
@@ -145,16 +141,22 @@ async function verifyLocation(){
     navigator.geolocation.getCurrentPosition((pos)=>{
       const lat = pos.coords.latitude, lon = pos.coords.longitude;
       const d = distanceMeters(OFFICE.lat, OFFICE.lon, lat, lon);
-      setDebug(`Jarak ke kantor: ${Math.round(d)} meter`);
+      
+      // Simpan ke variabel global
+      currentLat = lat;
+      currentLon = lon;
+      currentDistance = Math.round(d);
+      
+      setDebug(`Jarak ke titik kantor: ${currentDistance} meter`);
       if(d <= RADIUS_METERS){ 
         setStatus('Lokasi valid.'); 
         resolve(true); 
       } else { 
-        setStatus('Anda berada di luar area kantor.'); 
+        setStatus('Anda berada di luar area presensi.'); 
         resolve(false); 
       }
     }, (err)=>{
-      setStatus('Gagal mendapatkan lokasi. Pastikan GPS aktif.');
+      setStatus('Gagal mendapatkan lokasi. Pastikan GPS aktif dan diizinkan.');
       resolve(false);
     }, opts);
   });
@@ -162,7 +164,6 @@ async function verifyLocation(){
 
 async function startCamera() {
   try {
-    // Meminta izin kamera depan
     videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
     videoEl.srcObject = videoStream;
     return true;
@@ -180,15 +181,54 @@ function stopCamera() {
   }
 }
 
-// Fungsi untuk menjepret foto dari video
 function capturePhoto() {
   const canvas = document.getElementById('canvas');
   if (!videoEl.videoWidth) return '';
+  
   canvas.width = videoEl.videoWidth;
   canvas.height = videoEl.videoHeight;
   const ctx = canvas.getContext('2d');
+  
+  // 1. Gambar tangkapan video asli ke kanvas
   ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-  // Kompres ke JPEG kualitas 70% agar payload tidak terlalu berat
+  
+  // 2. Siapkan informasi untuk watermark (Format: YYYY-MM-DD HH:MM WIB)
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const timeNow = `${year}-${month}-${day} ${hours}:${minutes} WIB`;
+  
+  const namaPegawai = document.getElementById('name').value.trim() || 'Belum diisi';
+  const attendanceType = document.getElementById('atype').value;
+  
+  // 3. Atur gaya teks
+  ctx.font = '16px Arial'; 
+  ctx.fillStyle = 'white';
+  ctx.strokeStyle = 'black';
+  ctx.lineWidth = 3;
+  
+  // 4. Siapkan teks per baris
+  const line1 = `Nama: ${namaPegawai} | ${attendanceType}`;
+  const line2 = `Waktu: ${timeNow}`;
+  const line3 = `GPS: ${currentLat.toFixed(6)}, ${currentLon.toFixed(6)}`;
+  const line4 = `Jarak dari titik: ${currentDistance} meter`;
+  
+  const lines = [line1, line2, line3, line4];
+  
+  // 5. Posisikan teks
+  const paddingX = 15;
+  let paddingY = canvas.height - 85; 
+  
+  // Gambar setiap baris ke atas foto
+  lines.forEach(line => {
+    ctx.strokeText(line, paddingX, paddingY);
+    ctx.fillText(line, paddingX, paddingY);
+    paddingY += 22; 
+  });
+  
   return canvas.toDataURL('image/jpeg', 0.7); 
 }
 
@@ -225,14 +265,10 @@ document.getElementById('att-form').addEventListener('submit', async (ev)=>{
   const btnSubmit = document.getElementById('btn-submit');
   btnSubmit.disabled = true;
   
-  setStatus('Menangkap foto dan menyiapkan data...');
-  setResult('Sedang memproses...');
-  
-  const ip = await getPublicIP();
-  const photoBase64 = capturePhoto(); // Mengambil jepretan kamera
+  setStatus('Menyiapkan foto...');
+  const photoBase64 = capturePhoto(); 
   
   const payload = {
-    ip: ip,
     name: document.getElementById('name').value.trim(),
     id: document.getElementById('staffid').value.trim(),
     department: document.getElementById('dept').value,
@@ -241,7 +277,7 @@ document.getElementById('att-form').addEventListener('submit', async (ev)=>{
   };
 
   try{
-    // Menggunakan POST dengan content-type text/plain agar tidak terblokir preflight CORS GAS
+    setStatus('Mengirim ke server database... (mohon tunggu)');
     const r = await fetch(GAS_WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -254,15 +290,16 @@ document.getElementById('att-form').addEventListener('submit', async (ev)=>{
       setStatus('Berhasil terkirim.');
       document.getElementById('att-form').reset();
       
-      // Matikan kamera dan sembunyikan form kembali setelah sukses
       stopCamera();
       formWrap.style.display = 'none';
       document.getElementById('before-allowed').style.display = 'block';
     }else{
-      setResult('<div class="notice err">Gagal mengirim. ' + (j.error || '') + '</div>');
+      setResult('<div class="notice err">Gagal mengirim. Server merespon: ' + (j.error || '') + '</div>');
+      setStatus('Gagal terkirim.');
     }
   }catch(err){
-    setResult('<div class="notice err">Terjadi kesalahan jaringan/server.</div>');
+    setResult('<div class="notice err">Terjadi kesalahan jaringan/server. Pastikan Apps Script sudah berjalan.</div>');
+    setStatus('Error jaringan.');
   }
   btnSubmit.disabled = false;
 });
