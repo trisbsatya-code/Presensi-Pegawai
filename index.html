@@ -105,7 +105,7 @@
 // CONFIG
 const OFFICE = { lat: -6.2077527, lon: 106.8286578 };
 const RADIUS_METERS = 10000; // SEMENTARA 10000 UNTUK TESTING
-let GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwscPTLw511hZjUi_p_zcmwSimWN0KAw2cRvKBE5ZJW8MOPIdTrVXF1AX7-00b4Z9QX/exec';
+let GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxofqJgcU2aCHx2JL0jmv16HfApeo8g_uC1baIOZqFyNnTZttYHaGVAhuSvuQMB9rkh/exec';
 
 // GLOBAL VARIABLES
 let videoStream = null;
@@ -275,44 +275,38 @@ document.getElementById('btn-cancel').addEventListener('click', ()=>{
 // Submit Form
 document.getElementById('att-form').addEventListener('submit', async (ev)=>{
   ev.preventDefault();
+  
+  // Deteksi jika kamera belum siap
+  if(!videoEl.videoWidth) { alert("Kamera belum siap, mohon tunggu sebentar."); return; }
+
   const btnSubmit = document.getElementById('btn-submit');
   btnSubmit.disabled = true;
   
-  setStatus('Memproses foto...');
-  const photoBase64 = capturePhoto(); 
-  
-  // Mengirim data sebagai JSON (Paling stabil untuk payload besar)
-  const payload = {
-    name: document.getElementById('name').value.trim(),
-    id: document.getElementById('staffid').value.trim(),
-    department: document.getElementById('dept').value,
-    attendanceType: document.getElementById('atype').value,
-    photo: photoBase64
-  };
+  try {
+    const photoBase64 = capturePhoto(); 
+    const payload = {
+      name: document.getElementById('name').value.trim(),
+      id: document.getElementById('staffid').value.trim(),
+      department: document.getElementById('dept').value,
+      attendanceType: document.getElementById('atype').value,
+      photo: photoBase64
+    };
 
-  try{
-    setStatus('Mengirim ke server...');
+    setStatus('Mengirim...');
     const r = await fetch(GAS_WEBAPP_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
     
     const j = await r.json();
-    if(r.ok && j.result === 'success'){
-      setResult('<div class="notice">Presensi & Foto tercatat.</div>');
-      setStatus('Berhasil.');
-      document.getElementById('att-form').reset();
-      stopCamera();
-      formWrap.style.display = 'none';
-      document.getElementById('before-allowed').style.display = 'block';
+    if(j.result === 'success') {
+      alert("Presensi Berhasil!");
+      location.reload(); // Refresh halaman agar kamera reset
     } else {
-      setResult('<div class="notice err">Gagal: ' + (j.error || 'Unknown') + '</div>');
-      setStatus('Gagal.');
+      alert("Error dari server: " + j.error);
     }
-  }catch(err){
-    setResult('<div class="notice err">Error jaringan.</div>');
-    setStatus('Error.');
+  } catch(err) {
+    alert("Koneksi gagal: " + err.message);
   }
   btnSubmit.disabled = false;
 });
