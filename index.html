@@ -278,23 +278,24 @@ document.getElementById('att-form').addEventListener('submit', async (ev)=>{
   const btnSubmit = document.getElementById('btn-submit');
   btnSubmit.disabled = true;
   
-  setStatus('Menyiapkan foto...');
+  setStatus('Memproses foto...');
   const photoBase64 = capturePhoto(); 
   
-  // Menggunakan URLSearchParams agar data terkirim sebagai parameter yang dibaca e.parameter
-  const payload = new URLSearchParams();
-  payload.append('name', document.getElementById('name').value.trim());
-  payload.append('id', document.getElementById('staffid').value.trim());
-  payload.append('department', document.getElementById('dept').value);
-  payload.append('attendanceType', document.getElementById('atype').value);
-  payload.append('photo', photoBase64);
+  // Mengirim data sebagai JSON (Paling stabil untuk payload besar)
+  const payload = {
+    name: document.getElementById('name').value.trim(),
+    id: document.getElementById('staffid').value.trim(),
+    department: document.getElementById('dept').value,
+    attendanceType: document.getElementById('atype').value,
+    photo: photoBase64
+  };
 
   try{
-    setStatus('Mengirim ke server database...');
-    
+    setStatus('Mengirim ke server...');
     const r = await fetch(GAS_WEBAPP_URL, {
       method: 'POST',
-      body: payload // Mengirim sebagai form data, bukan JSON
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
     
     const j = await r.json();
@@ -310,7 +311,7 @@ document.getElementById('att-form').addEventListener('submit', async (ev)=>{
       setStatus('Gagal.');
     }
   }catch(err){
-    setResult('<div class="notice err">Error jaringan: ' + err.message + '</div>');
+    setResult('<div class="notice err">Error jaringan.</div>');
     setStatus('Error.');
   }
   btnSubmit.disabled = false;
