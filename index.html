@@ -13,8 +13,9 @@
     h1{font-size:20px;margin:0 0 8px}
     p.lead{color:var(--muted);margin:0 0 12px}
     .center{display:flex;align-items:center;justify-content:center}
-    button{background:var(--accent);color:white;border:0;padding:10px 14px;border-radius:10px;font-weight:600}
+    button{background:var(--accent);color:white;border:0;padding:10px 14px;border-radius:10px;font-weight:600; cursor:pointer;}
     button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(14,165,164,0.12)}
+    button:disabled{opacity:0.6; cursor:not-allowed}
     .muted{color:var(--muted);font-size:13px}
     .notice{padding:10px;border-radius:10px;margin-bottom:12px}
     .notice.warn{background:#fff7ed;color:#92400e}
@@ -23,6 +24,11 @@
     .col{flex:1}
     label{display:block;font-size:13px;margin-bottom:6px}
     input[type=text], select{width:100%;padding:10px;border-radius:10px;border:1px solid #e6eef2}
+    
+    /* Area Kamera */
+    #camera-wrap { margin-top: 14px; text-align: center; }
+    #camera-stream { border-radius: 10px; background: #000; max-height: 250px; width: 100%; object-fit: cover; }
+    
     footer{margin-top:14px;font-size:12px;color:var(--muted)}
     @media(max-width:420px){.container{margin:12px;padding:14px}}
   </style>
@@ -30,31 +36,36 @@
 <body>
   <div class="container">
     <div class="card">
-          <img src="https://www.cakerja.com/wp-content/uploads/2023/07/Lowongan-Kerja-PT-Mulia-Land-Mulia-Group.jpg" alt="Gambar logo Mulia berbentuk outline huruf M kapital" style="width:220px;height:80px;">
+      <img src="https://www.cakerja.com/wp-content/uploads/2023/07/Lowongan-Kerja-PT-Mulia-Land-Mulia-Group.jpg" alt="Logo Mulia" style="width:220px;height:auto;margin-bottom:12px;">
       <h1>Presensi Karyawan Atrium Mulia</h1>
-      <p class="lead">Kami akan memverifikasi lokasi Anda sebelum mengizinkan proses presensi. Mohon memastikan perangkat Anda mengizinkan akses lokasi GPS.</p>
+      <p class="lead">Kami akan memverifikasi lokasi dan wajah Anda sebelum mengizinkan proses presensi.</p>
 
       <div id="status" class="muted">Memeriksa kapabilitas perangkat...</div>
 
       <div id="controls" style="margin-top:12px">
         <div id="before-allowed">
-          <button id="btn-check">Verifikasi lokasi saya</button>
+          <button id="btn-check">Verifikasi Lokasi & Buka Kamera</button>
         </div>
       </div>
 
       <div id="form-wrap" style="display:none;margin-top:14px">
-        <div class="notice warn">Lokasi terverifikasi: Anda berada di dalam area kantor. Isi formulir berikut.</div>
-        <form id="att-form">
+        <div class="notice warn">Lokasi divalidasi. Wajah Anda akan difoto otomatis saat klik "Kirim".</div>
+        
+        <!-- Video Stream Wajah Pengguna -->
+        <div id="camera-wrap">
+          <video id="camera-stream" autoplay playsinline></video>
+          <canvas id="canvas" style="display:none;"></canvas>
+        </div>
+
+        <form id="att-form" style="margin-top: 14px;">
           <label for="name">Nama</label>
           <input id="name" name="name" type="text" required autocomplete="name">
-
           <div style="height:10px"></div>
-
-          <label for="staffid">ID</label>
+          
+          <label for="staffid">ID Pegawai</label>
           <input id="staffid" name="id" type="text" required>
-
           <div style="height:10px"></div>
-
+          
           <div class="row">
             <div class="col">
               <label for="dept">Departemen</label>
@@ -73,11 +84,10 @@
               </select>
             </div>
           </div>
-
+          
           <div style="height:14px"></div>
-
           <div class="center">
-            <button type="submit">Kirim</button>
+            <button type="submit" id="btn-submit">Kirim Presensi</button>
             <div style="width:10px"></div>
             <button type="button" id="btn-cancel" class="ghost">Batal</button>
           </div>
@@ -85,7 +95,6 @@
       </div>
 
       <div id="result" style="margin-top:12px"></div>
-
       <footer>
         <div id="debug" class="muted"></div>
       </footer>
@@ -93,24 +102,25 @@
   </div>
 
 <script>
-// CONFIG: office center & radius (meters) and GAS endpoint
+// CONFIG
 const OFFICE = { lat: -6.2077527, lon: 106.8286578 };
-const RADIUS_METERS = 100; // 100 m
-let GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxEMezAKJJKRY3FQUvzeLoop5IQMHMCHOWGXP6289eORIBocjK5_LvFhuX3bK-yD33K/exec';
+const RADIUS_METERS = 100;
+// PASTIKAN GAS_WEBAPP_URL INI ADALAH URL DEPLOYMENT BARU JIKA BERUBAH
+let GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyvlxSTfyjyhdD1-krk-yvdUK0SiF-NWlwsT1TI90ks1o9tUqxO-rVVRrbMqyRFNRTv/exec';
 
+let videoStream = null;
 const statusEl = document.getElementById('status');
-const controlsEl = document.getElementById('controls');
 const formWrap = document.getElementById('form-wrap');
 const resultEl = document.getElementById('result');
 const debugEl = document.getElementById('debug');
+const videoEl = document.getElementById('camera-stream');
 
 function setStatus(t){ statusEl.textContent = t; }
 function setDebug(t){ debugEl.textContent = t; }
-
 function toRad(v){ return v * Math.PI / 180; }
-// Haversine distance in meters
+
 function distanceMeters(lat1, lon1, lat2, lon2){
-  const R = 6371000; // m
+  const R = 6371000;
   const dLat = toRad(lat2-lat1);
   const dLon = toRad(lon2-lon1);
   const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)*Math.sin(dLon/2);
@@ -123,92 +133,141 @@ async function getPublicIP(){
     const r = await fetch('https://api.ipify.org?format=json');
     const j = await r.json();
     return j.ip;
-  }catch(e){
-    console.warn('Gagal mendapatkan alamat IP', e);
-    return 'unknown';
-  }
+  }catch(e){ return 'unknown'; }
 }
 
 async function verifyLocation(){
   setStatus('Meminta lokasi perangkat...');
-  if(!navigator.geolocation){ setStatus('Perangkat ini tidak mendukung geolokasi.'); return false; }
+  if(!navigator.geolocation){ setStatus('Perangkat tidak mendukung geolokasi.'); return false; }
 
   return new Promise((resolve)=>{
     const opts = { enableHighAccuracy:true, maximumAge:0, timeout:15000 };
-    navigator.geolocation.getCurrentPosition(async (pos)=>{
+    navigator.geolocation.getCurrentPosition((pos)=>{
       const lat = pos.coords.latitude, lon = pos.coords.longitude;
       const d = distanceMeters(OFFICE.lat, OFFICE.lon, lat, lon);
-      setDebug(`Lat:${lat.toFixed(6)} Lon:${lon.toFixed(6)} — distance ${Math.round(d)} m`);
-      if(d <= RADIUS_METERS){ setStatus('Lokasi diizinkan — berada di area kantor.'); resolve(true); }
-      else{ setStatus('Anda terdeteksi tidak berada di area kantor.'); resolve(false); }
+      setDebug(`Jarak ke kantor: ${Math.round(d)} meter`);
+      if(d <= RADIUS_METERS){ 
+        setStatus('Lokasi valid.'); 
+        resolve(true); 
+      } else { 
+        setStatus('Anda berada di luar area kantor.'); 
+        resolve(false); 
+      }
     }, (err)=>{
-      console.warn(err);
-      if(err.code === 1) setStatus('Izin lokasi ditolak oleh user.');
-      else setStatus('Gagal mendapatkan lokasi: ' + (err.message || 'unknown'));
+      setStatus('Gagal mendapatkan lokasi. Pastikan GPS aktif.');
       resolve(false);
     }, opts);
   });
 }
 
-// Wire up button
-document.getElementById('btn-check').addEventListener('click', async ()=>{
-  setResult('');
-  const ok = await verifyLocation();
-  if(ok){
-    formWrap.style.display = 'block';
-    document.getElementById('before-allowed').style.display = 'none';
-  } else {
-    formWrap.style.display = 'none';
-    document.getElementById('before-allowed').style.display = 'block';
+async function startCamera() {
+  try {
+    // Meminta izin kamera depan
+    videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+    videoEl.srcObject = videoStream;
+    return true;
+  } catch (err) {
+    console.error(err);
+    setStatus('Gagal mengakses kamera. Mohon izinkan akses kamera pada browser Anda.');
+    return false;
   }
+}
+
+function stopCamera() {
+  if (videoStream) {
+    videoStream.getTracks().forEach(track => track.stop());
+    videoStream = null;
+  }
+}
+
+// Fungsi untuk menjepret foto dari video
+function capturePhoto() {
+  const canvas = document.getElementById('canvas');
+  if (!videoEl.videoWidth) return '';
+  canvas.width = videoEl.videoWidth;
+  canvas.height = videoEl.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+  // Kompres ke JPEG kualitas 70% agar payload tidak terlalu berat
+  return canvas.toDataURL('image/jpeg', 0.7); 
+}
+
+// Tombol Verifikasi
+document.getElementById('btn-check').addEventListener('click', async ()=>{
+  resultEl.innerHTML = '';
+  const btn = document.getElementById('btn-check');
+  btn.disabled = true;
+  
+  const locOk = await verifyLocation();
+  if(locOk){
+    setStatus('Meminta izin kamera...');
+    const camOk = await startCamera();
+    if (camOk) {
+      formWrap.style.display = 'block';
+      document.getElementById('before-allowed').style.display = 'none';
+      setStatus('Silakan isi formulir dan arahkan wajah ke kamera.');
+    }
+  }
+  btn.disabled = false;
 });
 
-function setResult(html){ resultEl.innerHTML = html; }
-
-// Cancel
+// Batal
 document.getElementById('btn-cancel').addEventListener('click', ()=>{
   formWrap.style.display = 'none';
   document.getElementById('before-allowed').style.display = 'block';
-  setStatus('Location check reset.');
+  stopCamera();
+  setStatus('Dibatalkan.');
 });
 
-// Handle form submit
+// Submit Form
 document.getElementById('att-form').addEventListener('submit', async (ev)=>{
   ev.preventDefault();
-  setResult('Mengirim...');
-  setStatus('Menyiapkan presensi...');
+  const btnSubmit = document.getElementById('btn-submit');
+  btnSubmit.disabled = true;
+  
+  setStatus('Menangkap foto dan menyiapkan data...');
+  setResult('Sedang memproses...');
+  
   const ip = await getPublicIP();
-  // gather form
-  const name = document.getElementById('name').value.trim();
-  const id = document.getElementById('staffid').value.trim();
-  const department = document.getElementById('dept').value;
-  const attendanceType = document.getElementById('atype').value;
-
-  const payload = { ip, name, id, department, attendanceType };
+  const photoBase64 = capturePhoto(); // Mengambil jepretan kamera
+  
+  const payload = {
+    ip: ip,
+    name: document.getElementById('name').value.trim(),
+    id: document.getElementById('staffid').value.trim(),
+    department: document.getElementById('dept').value,
+    attendanceType: document.getElementById('atype').value,
+    photo: photoBase64
+  };
 
   try{
-    // Use GET to avoid CORS preflight
-    const query = new URLSearchParams(payload).toString();
-    const r = await fetch(GAS_WEBAPP_URL + '?' + query);
+    // Menggunakan POST dengan content-type text/plain agar tidak terblokir preflight CORS GAS
+    const r = await fetch(GAS_WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    
     const j = await r.json();
     if(r.ok && j.result === 'success'){
-      setResult('<div class="notice">Presensi sudah dicatat. Timestamp: ' + j.timestamp + '</div>');
-      setStatus('Submitted.');
+      setResult('<div class="notice">Presensi & Foto tercatat. Waktu: ' + j.timestamp + '</div>');
+      setStatus('Berhasil terkirim.');
       document.getElementById('att-form').reset();
+      
+      // Matikan kamera dan sembunyikan form kembali setelah sukses
+      stopCamera();
+      formWrap.style.display = 'none';
+      document.getElementById('before-allowed').style.display = 'block';
     }else{
-      setResult('<div class="notice err">Gagal mengirimkan data. ' + (j.error || 'Unknown error') + '</div>');
-      setStatus('Submission failed.');
+      setResult('<div class="notice err">Gagal mengirim. ' + (j.error || '') + '</div>');
     }
   }catch(err){
-    console.error(err);
-    setResult('<div class="notice err">Jaringan atau server galat saat mengirim.</div>');
-    setStatus('Submission error.');
+    setResult('<div class="notice err">Terjadi kesalahan jaringan/server.</div>');
   }
+  btnSubmit.disabled = false;
 });
 
-// Small helper: early message
-setStatus('Klik "Verifikasi lokasi saya" untuk memulai.');
-
+setStatus('Klik tombol verifikasi untuk memulai.');
 </script>
 </body>
 </html>
