@@ -105,7 +105,7 @@
 // CONFIG
 const OFFICE = { lat: -6.2077527, lon: 106.8286578 };
 const RADIUS_METERS = 10000; // SEMENTARA 10000 UNTUK TESTING
-let GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwXi1PLm342sEUfDfylpvdkKFieMIpKFDjrwsvalOad755s_0Zbo3uwTLaR7b6VE6hj/exec';
+let GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzdfX_M7wEhfWHu5wy7lTEs5HFUlvM9-Lgl09BhMl_Br6L_pYTLOGbcpfTokV-TyFsR/exec';
 
 // GLOBAL VARIABLES
 let videoStream = null;
@@ -281,20 +281,21 @@ document.getElementById('att-form').addEventListener('submit', async (ev)=>{
   setStatus('Menyiapkan foto...');
   const photoBase64 = capturePhoto(); 
   
-  const payload = {
-    name: document.getElementById('name').value.trim(),
-    id: document.getElementById('staffid').value.trim(),
-    department: document.getElementById('dept').value,
-    attendanceType: document.getElementById('atype').value,
-    photo: photoBase64
-  };
+  // Menggunakan URLSearchParams agar menjadi Simple Request (Bebas CORS Preflight)
+  const payload = new URLSearchParams();
+  payload.append('name', document.getElementById('name').value.trim());
+  payload.append('id', document.getElementById('staffid').value.trim());
+  payload.append('department', document.getElementById('dept').value);
+  payload.append('attendanceType', document.getElementById('atype').value);
+  payload.append('photo', photoBase64);
 
   try{
     setStatus('Mengirim ke server database... (mohon tunggu)');
+    
+    // Fetch tanpa header Content-Type (akan diatur otomatis oleh browser sebagai form-urlencoded)
     const r = await fetch(GAS_WEBAPP_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
+      body: payload
     });
     
     const j = await r.json();
@@ -311,8 +312,9 @@ document.getElementById('att-form').addEventListener('submit', async (ev)=>{
       setStatus('Gagal terkirim.');
     }
   }catch(err){
-    setResult('<div class="notice err">Terjadi kesalahan jaringan/server. Pastikan Apps Script sudah berjalan.</div>');
-    setStatus('Error jaringan.');
+    setResult('<div class="notice err">Terjadi kendala CORS/Jaringan. Pastikan URL Web App sudah benar.</div>');
+    setStatus('Error pengiriman.');
+    console.error(err);
   }
   btnSubmit.disabled = false;
 });
